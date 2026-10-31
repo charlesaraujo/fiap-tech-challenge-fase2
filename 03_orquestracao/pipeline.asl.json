@@ -1,0 +1,382 @@
+{
+  "Comment": "Pipeline tc-fase2: Bronze -> qualidade -> portão -> Silver -> Gold -> export Fase 3 -> manutenção Iceberg. Falha: registra em ops.run_metrics e avisa por SNS.",
+  "StartAt": "Preparar",
+  "States": {
+    "Preparar": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Comment": "Fixa RUN_ID (entrada ou último manifesto) e EXEC_ID para todas as etapas",
+      "Parameters": {
+        "FunctionName": "${LAMBDA_ARN}",
+        "Payload": {
+          "arquivos": [
+            "sql/ops/00_tabelas.sql"
+          ],
+          "vars.$": "$",
+          "etapa.$": "$$.State.Name"
+        }
+      },
+      "ResultSelector": {
+        "vars.$": "$.Payload.vars"
+      },
+      "ResultPath": "$",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.erro",
+          "Next": "NotificarFalha"
+        }
+      ],
+      "Next": "Bronze"
+    },
+    "Bronze": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${LAMBDA_ARN}",
+        "Payload": {
+          "arquivos": [
+            "sql/bronze/01_tabelas.sql"
+          ],
+          "vars.$": "$.vars",
+          "etapa.$": "$$.State.Name",
+          "entrada": "SELECT count(*) FROM tc_fase2_bronze.alunos WHERE run_id = '${RUN_ID}'"
+        }
+      },
+      "ResultSelector": {
+        "vars.$": "$.Payload.vars",
+        "bytes.$": "$.Payload.bytes"
+      },
+      "ResultPath": "$",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "MaxAttempts": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.erro",
+          "Next": "RegistrarFalha"
+        }
+      ],
+      "Next": "Qualidade"
+    },
+    "Qualidade": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${LAMBDA_ARN}",
+        "Payload": {
+          "arquivos": [
+            "sql/silver/00_tabelas.sql",
+            "sql/silver/01_staging.sql",
+            "sql/silver/02_qualidade.sql"
+          ],
+          "vars.$": "$.vars",
+          "etapa.$": "$$.State.Name",
+          "entrada": "SELECT count(*) FROM tc_fase2_bronze.alunos WHERE run_id = '${RUN_ID}'"
+        }
+      },
+      "ResultSelector": {
+        "vars.$": "$.Payload.vars",
+        "bytes.$": "$.Payload.bytes"
+      },
+      "ResultPath": "$",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "MaxAttempts": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.erro",
+          "Next": "RegistrarFalha"
+        }
+      ],
+      "Next": "Portao"
+    },
+    "Portao": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${LAMBDA_ARN}",
+        "Payload": {
+          "arquivos": [
+            "sql/silver/03_portao.sql"
+          ],
+          "vars.$": "$.vars",
+          "etapa.$": "$$.State.Name"
+        }
+      },
+      "ResultSelector": {
+        "vars.$": "$.Payload.vars",
+        "bytes.$": "$.Payload.bytes"
+      },
+      "ResultPath": "$",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "MaxAttempts": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.erro",
+          "Next": "RegistrarFalha"
+        }
+      ],
+      "Next": "PublicarSilver"
+    },
+    "PublicarSilver": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${LAMBDA_ARN}",
+        "Payload": {
+          "arquivos": [
+            "sql/silver/04_publicar.sql"
+          ],
+          "vars.$": "$.vars",
+          "etapa.$": "$$.State.Name",
+          "entrada": "SELECT count(*) FROM tc_fase2_silver.stg_alunos WHERE motivo_quarentena IS NULL"
+        }
+      },
+      "ResultSelector": {
+        "vars.$": "$.Payload.vars",
+        "bytes.$": "$.Payload.bytes"
+      },
+      "ResultPath": "$",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "MaxAttempts": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.erro",
+          "Next": "RegistrarFalha"
+        }
+      ],
+      "Next": "Gold"
+    },
+    "Gold": {
+      "Type": "Task",
+      "Comment": "Monta a Gold e mede o match rate dos joins dela; o portão reprova antes do export",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${LAMBDA_ARN}",
+        "Payload": {
+          "arquivos": [
+            "sql/gold/01_gold.sql",
+            "sql/silver/03_portao.sql"
+          ],
+          "vars.$": "$.vars",
+          "etapa.$": "$$.State.Name",
+          "entrada": "SELECT count(*) FROM tc_fase2_silver.alunos WHERE origem = 'oficial'"
+        }
+      },
+      "ResultSelector": {
+        "vars.$": "$.Payload.vars",
+        "bytes.$": "$.Payload.bytes"
+      },
+      "ResultPath": "$",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "MaxAttempts": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.erro",
+          "Next": "RegistrarFalha"
+        }
+      ],
+      "Next": "ExportarFase3"
+    },
+    "ExportarFase3": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${LAMBDA_ARN}",
+        "Payload": {
+          "arquivos": [
+            "sql/gold/02_exportar.sql"
+          ],
+          "vars.$": "$.vars",
+          "etapa.$": "$$.State.Name"
+        }
+      },
+      "ResultSelector": {
+        "vars.$": "$.Payload.vars",
+        "bytes.$": "$.Payload.bytes"
+      },
+      "ResultPath": "$",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "MaxAttempts": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.erro",
+          "Next": "RegistrarFalha"
+        }
+      ],
+      "Next": "ManutencaoIceberg"
+    },
+    "RegistrarSucesso": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${LAMBDA_ARN}",
+        "Payload": {
+          "arquivos": [
+            "sql/ops/registrar_execucao.sql"
+          ],
+          "vars": {
+            "RUN_ID.$": "$.vars.RUN_ID",
+            "EXEC_ID.$": "$.vars.EXEC_ID",
+            "STATUS": "sucesso",
+            "ERRO": "",
+            "INICIO.$": "$$.Execution.StartTime"
+          },
+          "etapa.$": "$$.State.Name"
+        }
+      },
+      "ResultPath": null,
+      "Next": "Sucesso"
+    },
+    "Sucesso": {
+      "Type": "Succeed"
+    },
+    "RegistrarFalha": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${LAMBDA_ARN}",
+        "Payload": {
+          "arquivos": [
+            "sql/ops/registrar_execucao.sql"
+          ],
+          "vars": {
+            "RUN_ID.$": "$.vars.RUN_ID",
+            "EXEC_ID.$": "$.vars.EXEC_ID",
+            "STATUS": "falhou",
+            "ERRO.$": "$.erro.Cause",
+            "INICIO.$": "$$.Execution.StartTime"
+          },
+          "etapa.$": "$$.State.Name"
+        }
+      },
+      "ResultPath": null,
+      "Next": "NotificarFalha",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.erro_registro",
+          "Next": "NotificarFalha"
+        }
+      ]
+    },
+    "NotificarFalha": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${TOPICO_ARN}",
+        "Subject": "[tc-fase2] pipeline FALHOU",
+        "Message.$": "States.Format('A execução {} do pipeline tc-fase2 falhou.\n\nErro: {}\n\nConsole: https://${REGIAO}.console.aws.amazon.com/states/home?region=${REGIAO}#/v2/executions/details/{}', $$.Execution.Name, $.erro.Cause, $$.Execution.Id)"
+      },
+      "ResultPath": null,
+      "Next": "Falhou"
+    },
+    "Falhou": {
+      "Type": "Fail",
+      "Error": "PipelineFalhou",
+      "Cause": "Veja ops.run_metrics e o e-mail de alerta"
+    },
+    "ManutencaoIceberg": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${LAMBDA_ARN}",
+        "Payload": {
+          "arquivos": [
+            "sql/ops/manutencao_iceberg.sql"
+          ],
+          "vars.$": "$.vars",
+          "etapa.$": "$$.State.Name"
+        }
+      },
+      "ResultSelector": {
+        "vars.$": "$.Payload.vars",
+        "bytes.$": "$.Payload.bytes"
+      },
+      "ResultPath": "$",
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "MaxAttempts": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.erro",
+          "Next": "RegistrarFalha"
+        }
+      ],
+      "Next": "RegistrarSucesso",
+      "Comment": "OPTIMIZE + VACUUM (retenção de 1 dia): sem isso a Silver cresce a cada MERGE"
+    }
+  }
+}
