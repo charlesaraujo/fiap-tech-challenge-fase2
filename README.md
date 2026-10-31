@@ -2,21 +2,13 @@
 
 Tech Challenge da Fase 2 da Pós-Tech AI Scientist (FIAP).
 
-## Integrantes do grupo
-
-| Nome | RM |
-| --- | --- |
-| Charles Araújo da Silva | RM375662 |
-| Rafael Monteiro | RM376321 |
-
-**Vídeo executivo:** link a inserir após a gravação.
-
 Construímos um pipeline batch e streaming em arquitetura medalhão na AWS, usando o dataset
 `br_inep_avaliacao_alfabetizacao` da Base dos Dados. Tudo foi executado de verdade numa conta do AWS Academy Learner
 Lab (us-east-1). Os 32 prints em [`evidencias/`](evidencias/README.md) mostram os identificadores das execuções, as
 contagens e os e-mails de alerta.
 
-Sumário: [1. Contexto](#1-contexto-do-problema) ·
+Sumário: [Vídeo executivo](#vídeo-executivo) ·
+[1. Contexto](#1-contexto-do-problema) ·
 [2. Arquitetura](#2-arquitetura-proposta) ·
 [3. Tecnologias](#3-tecnologias-utilizadas) ·
 [4. Decisões](#4-decisões-arquiteturais) ·
@@ -25,6 +17,19 @@ Sumário: [1. Contexto](#1-contexto-do-problema) ·
 [7. Limitações](#7-limitações-conhecidas) ·
 [Como executar](#como-executar) ·
 [Organização das pastas](#organização-das-pastas)
+
+## Integrantes do grupo
+
+| Nome | RM |
+| --- | --- |
+| Charles Araújo da Silva | RM375662 |
+| Rafael Monteiro | RM376321 |
+
+## Vídeo executivo
+
+Apresentação de até 5 minutos para liderança e stakeholders: problema, arquitetura, valor do pipeline e uso em IA.
+
+**Link:** *(cole aqui o link do vídeo)*
 
 ## 1. Contexto do problema
 
