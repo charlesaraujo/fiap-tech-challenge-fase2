@@ -29,7 +29,7 @@ Sumário: [Vídeo executivo](#vídeo-executivo) ·
 
 Apresentação de até 5 minutos para liderança e stakeholders: problema, arquitetura, valor do pipeline e uso em IA.
 
-**Link:** *(cole aqui o link do vídeo)*
+**Link:** https://drive.google.com/file/d/1bS0cz1fM5ahe_e0KImsrxevpYUEdXOwV/view
 
 ## 1. Contexto do problema
 
